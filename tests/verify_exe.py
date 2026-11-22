@@ -58,8 +58,8 @@ def main():
         tools = tool_folders[-1]
         print("Ventana del ejecutable abierta sin Python ni FFmpeg en PATH.")
         print("Herramientas extraídas:", tools, [item.name for item in tools.iterdir()])
-        for tool in ("yt-dlp", "ffmpeg", "ffprobe"):
-            args = [str(tools / f"{tool}.exe"), "--version" if tool == "yt-dlp" else "-version"]
+        for tool in ("yt-dlp", "ffmpeg", "ffprobe", "node"):
+            args = [str(tools / f"{tool}.exe"), "--version" if tool in {"yt-dlp", "node"} else "-version"]
             if not Path(args[0]).is_file():
                 raise RuntimeError(f"Herramienta ausente: {args[0]}; estado de la aplicación: {process.poll()}")
             result = subprocess.run(args, env=env, check=True, capture_output=True,
@@ -67,7 +67,11 @@ def main():
                                     creationflags=subprocess.CREATE_NO_WINDOW)
             print(tool + ": " + result.stdout.splitlines()[0])
         from test_local_download import LocalDownloadTests
+        from test_live import LiveIntegrationTests
+        from test_dvr import DvrIntegrationTests
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(LocalDownloadTests)
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(LiveIntegrationTests))
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(DvrIntegrationTests))
         with patch("app.sys.frozen", True, create=True), patch("app.sys._MEIPASS", str(tools.parent), create=True):
             result = unittest.TextTestRunner(verbosity=2).run(suite)
         if not result.wasSuccessful() or result.skipped:

@@ -35,8 +35,9 @@ class ValidationTests(unittest.TestCase):
         command = build_command(request, "yt-dlp")
         for option, expected in [
             ("--download-sections", "*00:00:15-00:01:30"),
-            ("--merge-output-format", "mp4"), ("--recode-video", "mp4"),
+            ("--merge-output-format", "mp4"), ("--remux-video", "mp4"),
             ("--cookies-from-browser", "brave"), ("--paths", "folder with spaces"),
+            ("--concurrent-fragments", "4"), ("--throttled-rate", "100K"),
         ]:
             self.assertEqual(command[command.index(option) + 1], expected)
         self.assertIn("--force-keyframes-at-cuts", command)
@@ -45,6 +46,12 @@ class ValidationTests(unittest.TestCase):
         plain = build_command(DownloadRequest(request.url, 0, 1, Path("clips")), "yt-dlp")
         self.assertNotIn("--force-keyframes-at-cuts", plain)
         self.assertNotIn("--cookies-from-browser", plain)
+
+        # Prueba modo video completo
+        full = build_command(DownloadRequest(request.url, destination=Path("clips"), full_video=True), "yt-dlp")
+        self.assertNotIn("--download-sections", full)
+        self.assertNotIn("--force-keyframes-at-cuts", full)
+        self.assertIn("-S", full)
 
     def test_missing_tools_are_named(self):
         with patch("app.shutil.which", side_effect=lambda name: None if name == "ffmpeg" else name):
