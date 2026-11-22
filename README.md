@@ -54,7 +54,7 @@ En Linux instala `python3-tk` y `ffmpeg` con el gestor de paquetes del sistema; 
 
 1. Pega una URL HTTP/HTTPS del video.
 2. Elige el modo de descarga:
-   - **Video completo:** En **Video / VOD**, marca *"Descargar video completo (sin recortar)"*. Omite el recorte y la recodificación; la velocidad depende de la red, el sitio y el formato.
+   - **Video completo (predeterminado):** En **Video / VOD**, la casilla *"Descargar video completo (sin recortar)"* comienza activada. Omite el recorte y la recodificación; la velocidad depende de la red, el sitio y el formato.
    - **Segmento específico:** Desmarca la casilla y selecciona **Horas**, **Minutos** y **Segundos** de inicio y fin con las listas desplegables.
 3. Elige la **Calidad de video**:
    - `1080p (Rápido · Recomendado)`: Descarga en Full HD priorizando streams nativos MP4 (H.264/AAC).
@@ -91,9 +91,10 @@ El comando se construye como una lista de argumentos y se ejecuta con `subproces
 - **Remuxing:** `--merge-output-format mp4` y `--remux-video mp4` evitan recodificar por defecto. La unión copia streams y suele ser mucho más rápida, pero su tiempo depende del tamaño y del disco; no se garantiza menos de un segundo. MP4 puede conservar VP9/AV1 y no garantiza H.264/AAC.
 - **Límite de calidad:** un filtro `-f` limita las alturas conocidas a 1080, 720 o 480. `-S res:1080` por sí solo expresaba una preferencia y podía elegir una resolución superior. Los enlaces directos sin metadatos de altura conservan su único formato. Máxima calidad no tiene límite; se prefieren H.264/AAC a igualdad de resolución.
 - **Fragmentos en paralelo:** `--concurrent-fragments 4` se aplica a los descargadores nativos de fragmentos compatibles; no divide cualquier archivo HTTP en cuatro conexiones ni acelera necesariamente FFmpeg.
-- **Detección de velocidad baja:** `--throttled-rate 100K` solicita volver a extraer los datos si se detecta una velocidad baja. No elimina límites de YouTube. Se quitaron los clientes `android,web` forzados para respetar la selección actual de yt-dlp.
+- **Peticiones HTTP acotadas para YouTube:** `--http-chunk-size 1M` solicita el archivo en tramos de 1 MiB en el descargador HTTP nativo. Puede mejorar conexiones que se ralentizan con peticiones más grandes; no garantiza una velocidad mínima. No acelera el descargador FFmpeg de recortes. Se eliminó el umbral forzado `--throttled-rate 100K`, que puede provocar reextracciones repetidas cuando la conexión permanece lenta. Se respetan los clientes actuales de yt-dlp.
 - **Tiempos de espera y errores:** se limitan las esperas/reintentos y se aborta ante fragmentos ausentes en VOD, para no dar éxito a un clip con huecos. El modo VOD rechaza emisiones en vivo.
 - **Videos completos:** omitir `--download-sections` permite usar el descargador normal. Un recorte no implica por sí mismo velocidad 1x; depende del protocolo, el servidor y de si hay recodificación. Un directo nuevo sí necesita esperar a que ocurra el contenido.
+- **Opciones independientes por modo:** activar corte exacto en un directo no lo activa al volver a Video / VOD. El indicador de estado muestra el avance de la transferencia o la unión/procesamiento; el registro incluye el tiempo total del trabajo.
 
 No se puede atribuir una descarga de 20 minutos a una causa concreta sin el enlace y su registro. Tampoco se puede prometer que un video de 11 minutos tarde 15–30 segundos: bitrate, red, plataforma, CPU y precisión de corte cambian el resultado. `--recode-video mp4` tampoco significa que se recodificaran todos los MP4: yt-dlp puede omitir la conversión si ya tienen el formato de destino.
 

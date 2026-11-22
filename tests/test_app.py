@@ -37,7 +37,7 @@ class ValidationTests(unittest.TestCase):
             ("--download-sections", "*00:00:15-00:01:30"),
             ("--merge-output-format", "mp4"), ("--remux-video", "mp4"),
             ("--cookies-from-browser", "brave"), ("--paths", "folder with spaces"),
-            ("--concurrent-fragments", "4"), ("--throttled-rate", "100K"),
+            ("--concurrent-fragments", "4"),
         ]:
             self.assertEqual(command[command.index(option) + 1], expected)
         self.assertIn("--force-keyframes-at-cuts", command)
@@ -52,6 +52,15 @@ class ValidationTests(unittest.TestCase):
         self.assertNotIn("--download-sections", full)
         self.assertNotIn("--force-keyframes-at-cuts", full)
         self.assertIn("-S", full)
+
+    def test_youtube_uses_small_http_requests_without_reextract_loop(self):
+        for url in ("https://www.youtube.com/watch?v=abc", "https://youtu.be/abc"):
+            command = build_command(DownloadRequest(url, full_video=True), "yt-dlp")
+            self.assertEqual(command[command.index("--http-chunk-size") + 1], "1M")
+            self.assertNotIn("--throttled-rate", command)
+            self.assertNotIn("--download-sections", command)
+        command = build_command(DownloadRequest("https://example.com/youtube.com", full_video=True), "yt-dlp")
+        self.assertNotIn("--http-chunk-size", command)
 
     def test_missing_tools_are_named(self):
         with patch("app.shutil.which", side_effect=lambda name: None if name == "ffmpeg" else name):

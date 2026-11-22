@@ -16,6 +16,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from tkinter import filedialog, ttk
 from urllib.parse import urlsplit
@@ -176,7 +177,6 @@ def build_command(request: DownloadRequest, executable: str) -> list[str]:
         "--no-simulate", "--no-quiet", "--progress", "--no-overwrites",
         "--windows-filenames", "--trim-filenames", "180",
         "--concurrent-fragments", "4",
-        "--throttled-rate", "100K",
         "--socket-timeout", "20", "--retries", "3", "--fragment-retries", "3",
         "--abort-on-unavailable-fragments",
         "--match-filter", "!is_live",
@@ -187,6 +187,10 @@ def build_command(request: DownloadRequest, executable: str) -> list[str]:
 
     command.extend(["-f", format_selector(request.quality), "-S", "res,codec:h264:m4a"])
     command.extend(javascript_runtime_args())
+    host = urlsplit(validate_url(request.url)).hostname.lower()
+    if host in {"youtube.com", "youtu.be"} or host.endswith(".youtube.com"):
+        # Acota cada petición HTTP; -N solo paraleliza protocolos fragmentados.
+        command.extend(["--http-chunk-size", "1M"])
 
     if not request.full_video:
         command.extend(["--download-sections", f"*{start}-{end}"])
@@ -256,6 +260,7 @@ class DownloadJob:
                     pass
 
     def run(self) -> None:
+        started = time.monotonic()
         try:
             executable = check_dependencies()
             self.request.destination.mkdir(parents=True, exist_ok=True)
@@ -263,6 +268,10 @@ class DownloadJob:
             if self.cancelled.is_set():
                 return
             self.events.put(("log", "Preparando descarga y lectura de metadatos…"))
+            self.events.put(("status", "Consultando YouTube y seleccionando formatos…" if "youtube" in self.request.url or "youtu.be" in self.request.url else "Consultando el video y seleccionando formatos…"))
+            if self.request.exact and not self.request.full_video:
+                self.events.put(("log", "Corte exacto activo: FFmpeg recodificará el segmento y puede consumir CPU."))
+            phase = None
             options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {"start_new_session": True}
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
@@ -282,6 +291,17 @@ class DownloadJob:
                         output_files.append(Path(json.loads(line[len(FILE_MARKER):])))
                     elif line:
                         self.events.put(("log", line))
+                        if line.startswith("[download]"):
+                            status = line
+                        elif line.startswith(("[Merger]", "[VideoRemuxer]", "[Fixup")):
+                            status = "Uniendo audio y video / preparando MP4…"
+                        elif line.startswith(("frame=", "size=")) or "[download] Destination" in line:
+                            status = "Procesando el recorte con FFmpeg… " + line
+                        else:
+                            status = None
+                        if status and status != phase:
+                            phase = status
+                            self.events.put(("status", status))
             code = self.process.wait()
             if self.cancelled.is_set():
                 return
@@ -301,6 +321,7 @@ class DownloadJob:
             if not self.cancelled.is_set():
                 self.events.put(("error", str(exc)))
         finally:
+            self.events.put(("log", f"Tiempo total del trabajo: {time.monotonic() - started:.1f} s."))
             # También limpia procesos si falla la lectura de stdout.
             self._stop_process()
             if self.process is not None:
@@ -383,10 +404,13 @@ class DownClipApp(ctk.CTk):
         self.destination = Path.home() / "Downloads"
         self.exact = ctk.BooleanVar(value=False)
         self.cookies = ctk.BooleanVar(value=False)
-        self.full_video = ctk.BooleanVar(value=False)
+        self.full_video = ctk.BooleanVar(value=True)
+        self._mode_preferences = {"Video / VOD": (True, False), "Directo en vivo": (False, True)}
+        self._previous_mode = "Video / VOD"
         self.inputs: list = []
         self.protocol("WM_DELETE_WINDOW", self.close_app)
         self._build_ui()
+        self._on_full_video_toggle()
         self.after(100, self._poll_events)
 
     def _label(self, parent, text, **kwargs):
@@ -539,10 +563,16 @@ class DownClipApp(ctk.CTk):
         self.browser.configure(state="normal" if self.cookies.get() and self.job is None and self.recorder is None else "disabled")
 
     def _change_mode(self, _value=None):
+        mode = self.mode.get()
+        if mode != self._previous_mode:
+            self._mode_preferences[self._previous_mode] = (self.full_video.get(), self.exact.get())
+            full, exact = self._mode_preferences[mode]
+            self.full_video.set(full)
+            self.exact.set(exact)
+            self._previous_mode = mode
         live = self.mode.get() == "Directo en vivo"
         if live:
             self.full_video.set(False)
-            self.exact.set(True)
             self.live_panel.grid()
         else:
             self.live_panel.grid_remove()
@@ -780,6 +810,9 @@ class DownClipApp(ctk.CTk):
                 self._log(f"Archivo listo: {payload}")
                 self.status.configure(text="Descarga completada con éxito. Consulta la ruta en el registro.", text_color=COLORS["success"])
                 self._notify("Descarga completada", f"Archivo MP4 guardado en:\n{payload}", is_error=False)
+            elif kind == "status":
+                if not self.closing and self.job and not self.job.cancelled.is_set():
+                    self.status.configure(text=payload, text_color=COLORS["text"])
             elif kind == "buffer":
                 self.live_path, self.live_duration = payload
                 self.start.set(0)

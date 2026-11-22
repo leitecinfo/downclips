@@ -33,7 +33,7 @@ def visible_app_windows():
 
 
 def main():
-    executable = ROOT / "dist" / "DownClip.exe"
+    executable = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "dist" / "DownClip.exe"
     runtime = ROOT / "build" / "smoke-runtime"
     runtime.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
@@ -41,13 +41,14 @@ def main():
     # Comprueba la apertura sin Python ni herramientas de video en PATH.
     env["PATH"] = str(Path(os.environ["SystemRoot"]) / "System32")
     previous_windows = visible_app_windows()
-    process = subprocess.Popen([str(executable)], env=env)
+    process = subprocess.Popen([str(executable)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     opened_windows = set()
     try:
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             if process.poll() is not None:
-                raise RuntimeError(f"El ejecutable terminó al abrir: {process.returncode}")
+                detail = process.communicate()[1].decode("utf-8", errors="replace")
+                raise RuntimeError(f"El ejecutable terminó al abrir: {process.returncode}\n{detail}")
             opened_windows = visible_app_windows() - previous_windows
             tool_folders = list(runtime.glob("_MEI*/tools"))
             if opened_windows and tool_folders:

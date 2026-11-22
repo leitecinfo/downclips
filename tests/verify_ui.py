@@ -13,6 +13,9 @@ def main():
     app = DownClipApp()
     try:
         app.update()
+        assert app.full_video.get()
+        assert not app.exact.get()
+        assert app.download_button.cget("text") == "Descargar Video Completo"
         app.mode.set("Directo en vivo")
         app._change_mode()
         app.update()
@@ -41,6 +44,8 @@ def main():
         app._live_controls()
         app.mode.set("Video / VOD")
         app._change_mode()
+        assert app.full_video.get()
+        assert not app.exact.get(), "El corte exacto del directo no debe activar la recodificación en VOD"
         app.full_video.set(True)
         app._on_full_video_toggle()
         assert str(app.start.controls[0].cget("state")) == "disabled"
